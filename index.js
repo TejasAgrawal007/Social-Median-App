@@ -9,6 +9,7 @@ const port = 3000
 
 const userModel = require('./models/user')
 const postModel = require('./models/post')
+const user = require('./models/user')
 
 app.use(express.json())
 app.use(express.urlencoded({extended : true}))
@@ -26,9 +27,10 @@ app.get('/login', (req, res) => {
     res.render('login');
 })
 
-app.get('/profile', isLoggedIn, (req,res) => {
-    console.log(req.user);
-    res.send("Welcome To Profile!")
+app.get('/profile', isLoggedIn, async (req,res) => {
+    let user = await userModel.findOne({email : req.user.email}).populate("posts");
+    // user.populate('posts')
+    res.render("profile", {user})
 })
 
 
@@ -43,6 +45,7 @@ app.post('/create', async (req, res) => {
     bcrypt.genSalt(10,  (err, salt) => {
         bcrypt.hash(password, salt, async (err, hash) => {
             const user = await userModel.create({
+                name,
                 username,
                 email,
                 age,
@@ -70,12 +73,29 @@ app.post('/login', async (req, res) => {
         if(result) {
             let token = jwt.sign({email : email, userid : user._id}, "secret");
             res.cookie("token", token)
-            res.status(200).send("You can Login!");
+            res.status(200).redirect("/profile");
         }
         else res.redirect('/login')
     })
 
 })
+
+
+app.post('/post', isLoggedIn ,async  (req, res) => {
+
+    let user = await userModel.findOne({email : req.user.email})
+
+    let {content} = req.body;
+
+    let post = await postModel.create({
+        user : user._id,
+        content
+    });
+    user.posts.push(post._id)
+    await user.save();
+    res.redirect("/profile")
+})
+
 
 app.get('/logout', (req, res) => {
     res.cookie("token", "")
@@ -85,7 +105,7 @@ app.get('/logout', (req, res) => {
 
 function isLoggedIn(req, res, next){
     if (req.cookies.token === "")  {
-        res.send("You need to login first!");
+        res.redirect("/login");
     }else{
         let data = jwt.verify(req.cookies.token, "secret")
         req.user = data;
